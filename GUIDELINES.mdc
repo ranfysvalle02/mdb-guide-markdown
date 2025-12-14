@@ -198,8 +198,3 @@ async def ensure_index(collection, model):
 2.  **Assuming "READY" = Queryable:** In rare cases (updates/swaps), an index may report `READY` while the old version is still active. Always check `queryable: true`.
 3.  **Blocking the Loop:** Using `pymongo` (sync) methods inside `async def` (Python) or `await` (Node) blocks.
 4.  **Silent Failures:** Swallowing all exceptions during index creation. Always log the failure or raise a visible error.
-
-<!-- end list -->
-
-```
-```
