@@ -86,23 +86,34 @@ text_model = SearchIndexModel(
 <!-- end list -->
 
 ```python
-# Implementation Logic (Generic)
-async def wait_for_search_index(collection, index_name):
+import asyncio
+import time
+
+# Implementation Logic (Generic Async)
+async def wait_for_search_index(collection, index_name: str, timeout: int = 300):
+    """
+    Polls the collection until the specified search index is queryable.
+    """
     start = time.time()
-    while time.time() - start < 300: # 5 min timeout
+    while time.time() - start < timeout:
         # Fetch status via aggregation
         cursor = collection.aggregate([{"$listSearchIndexes": {"name": index_name}}])
         
         # Cursor might be empty initially if index creation just started
+        # We use a flag to track if we found the index in the list
+        found = False
         async for index_info in cursor:
+            found = True
             # Check both status and queryable flag
-            if index_info.get("queryable") is True:
+            if index_info.get("queryable") is True and index_info.get("status") == "READY":
                 return True
             elif index_info.get("status") == "FAILED":
                 raise Exception(f"Index build failed: {index_info}")
         
+        # Wait before retrying
         await asyncio.sleep(5)
-    raise TimeoutError(f"Index {index_name} not ready in time.")
+    
+    raise TimeoutError(f"Index {index_name} not ready within {timeout} seconds.")
 ```
 
 ### C. Idempotency & Creation Logic
@@ -114,21 +125,26 @@ async def wait_for_search_index(collection, index_name):
 <!-- end list -->
 
 ```python
+from pymongo.errors import OperationFailure
+
 async def ensure_index(collection, model):
     try:
         # 1. Attempt creation
         await collection.create_search_index(model=model)
+        print(f"Creation initiated for index: {model.name}")
     except OperationFailure as e:
         # 2. Handle benign race conditions
         if "IndexAlreadyExists" in str(e) or "DuplicateIndexName" in str(e):
              # Optional: Check if definition changed and update if necessary
              # await collection.update_search_index(name=model.name, definition=model.definition)
-             pass
+             print(f"Index {model.name} already exists. Proceeding.")
         else:
             raise e
     
     # 3. Always wait for it to be ready before proceeding
+    print(f"Waiting for index {model.name} to be queryable...")
     await wait_for_search_index(collection, model.name)
+    print(f"Index {model.name} is ready.")
 ```
 
 ## 3\. Aggregation Pipeline Optimization
@@ -183,3 +199,7 @@ async def ensure_index(collection, model):
 3.  **Blocking the Loop:** Using `pymongo` (sync) methods inside `async def` (Python) or `await` (Node) blocks.
 4.  **Silent Failures:** Swallowing all exceptions during index creation. Always log the failure or raise a visible error.
 
+<!-- end list -->
+
+```
+```
